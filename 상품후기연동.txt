@@ -1,0 +1,481 @@
+<?php
+include "../lib/config.php";
+include LIB_DIR . "/session.php";
+include LIB_DIR . "/function.php";
+
+$connect = sqldb();
+$board = 'es_goods';
+$board2 = 'es_goods left outer join fa_review_connect on es_goods.goodsNo = fa_review_connect.goodsNo';
+$sql_select = "es_goods.goodsNo, es_goods.imagePath, (select imageName from es_goodsImage where goodsNo = es_goods.goodsNo and imageKind = 'list') as imageName,
+                                   es_goods.goodsCd, es_goods.goodsNm, es_goods.goodsSearchWord, es_goods.cateCd, es_goods.scmNo,(select companyNm from es_scmManage where scmNo = es_goods.scmNo) as companyNm, 
+                                   es_goods.purchaseNo,(select purchaseNm from es_purchase where purchaseNo = es_goods.purchaseNo) as purchaseNm, es_goods.deliverySno,
+                                   (select goodsIconCd from es_goodsIcon where goodsNo = es_goods.goodsNo order by sno desc limit 1) as goodsIconCd,es_goods.taxFreeFl,es_goods.taxPercent,
+                                   Floor(es_goods.fixedPrice) as fixedPrice, Floor(es_goods.costPrice) as costPrice, Floor(es_goods.goodsPrice) as goodsPrice, es_goods.totalStock, 
+                                   (select sum(goodsCnt) from es_orderGoods where orderStatus in ('o1','p1') and goodsNo = es_goods.goodsNo) as useStock,
+                                   case when es_goods.tuSalesEnd != '0000-00-00 00:00:00' then DATE_FORMAT(es_goods.tuSalesEnd,'%Y-%m-%d') else '' end as salesEnd,
+                                   es_goods.goodsDisplayFl, es_goods.goodsDisplayMobileFl, es_goods.goodsSellFl, es_goods.goodsSellMobileFl,
+                                   es_goods.soldOutFl, es_goods.optionFl, es_goods.regDt, es_goods.modDt,
+                                   ((select COALESCE(sum(goodsCnt),0) from es_orderGoods where goodsNo = es_goods.goodsNo and orderStatus in ('p1','g1','g2','g3','g4','d1','d2','s1')
+                                     and regDt between concat(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d'), INTERVAL -4 DAY),' 00:00:00') and concat(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d'), INTERVAL -1 DAY),' 23:59:59')
+                                    ) / 3) as averageOrderCnt3,
+                                   ((select COALESCE(sum(goodsCnt),0) from es_orderGoods where goodsNo = es_goods.goodsNo and orderStatus in ('p1','g1','g2','g3','g4','d1','d2','s1')
+                                     and regDt between concat(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d'), INTERVAL -8 DAY),' 00:00:00') and concat(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d'), INTERVAL -1 DAY),' 23:59:59')
+                                    ) / 7) as averageOrderCnt7,
+                                   ((select COALESCE(sum(goodsCnt),0) from es_orderGoods where goodsNo = es_goods.goodsNo and orderStatus in ('p1','g1','g2','g3','g4','d1','d2','s1')
+                                     and regDt between concat(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d'), INTERVAL -21 DAY),' 00:00:00') and concat(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d'), INTERVAL -1 DAY),' 23:59:59')
+                                    ) / 20) as averageOrderCnt20,es_goods.orderGoodsCnt, es_goods.tuSalesPersent";
+$sql_con = " and ";
+
+if ($_REQUEST['sch'] != '') {
+    switch ($_REQUEST['sch_type']) {
+        case '0':
+            $sql_where = "where delFl='n' and (es_goods.goodsNo = '" . $_REQUEST['sch'] . "'
+                            or es_goods.goodsNm like concat('%" . $_REQUEST['sch'] . "%')
+                  or es_goods.goodsCd like concat('%" . $_REQUEST['sch'] . "%')
+                  or es_goods.goodsSearchWord like concat('%" . $_REQUEST['sch'] . "%')
+                   or es_goods.scmNo in (select scmNo from es_scmManage 
+                                         where scmKind = 'P' and companyNm like concat('%" . $_REQUEST['sch'] . "%'))
+                   or es_goods.purchaseNo in (select purchaseNo from es_purchase 
+                                              where purchaseNm like concat('%" . $_REQUEST['sch'] . "%'))                                                        
+                   )";
+            break;
+        case '1':
+            $sql_where = "where delFl='n' and es_goods.goodsNm like '%" . $_REQUEST['sch'] . "%' ";
+            break;
+        case '2':
+            $sql_where = "where delFl='n' and es_goods.goodsCd like '%" . $_REQUEST['sch'] . "%' ";
+            break;
+        case '3':
+            $sql_where = "where delFl='n' and es_goods.goodsSearchWord like '%" . $_REQUEST['sch'] . "%' ";
+            break;
+        case '4':
+            $sql_where = "where delFl='n' and es_goods.scmNo in (select scmNo from es_scmManage where scmKind = 'P' and companyNm like concat('%" . $_REQUEST['sch'] . "%')) ";
+            break;
+        case '5':
+            $sql_where = "where delFl='n' and es_goods.purchaseNo in (select purchaseNo from es_purchase where purchaseNm like concat('%" . $_REQUEST['sch'] . "%')) ";
+            break;
+        case '6':
+            $sql_where = "where delFl='n' and es_goods.goodsNo in (" . $_REQUEST['sch'] . ") ";
+            break;
+        default:
+            $sql_where = "where delFl='n' and es_goods.goodsNm like '%" . $_REQUEST['sch'] . "%' ";
+    }
+} else {
+    $sql_where = "where delFl='n' and fixedPrice!=0 and goodsNo IN (SELECT goodsNo FROM fa_review_connect)";
+}
+
+if ($_REQUEST['category_1'] != '')
+    $sql_where = $sql_where . $sql_con . "es_goods.goodsNo in (select goodsNo from es_goodsLinkCategory where cateLinkFl = 'y' and cateCd = '" . $_REQUEST['category_1'] . "')";
+if ($_REQUEST['category_2'] != '')
+    $sql_where = $sql_where . $sql_con . "es_goods.goodsNo in (select goodsNo from es_goodsLinkCategory where cateLinkFl = 'y' and cateCd = '" . $_REQUEST['category_2'] . "')";
+if ($_REQUEST['category_3'] != '')
+    $sql_where = $sql_where . $sql_con . "es_goods.goodsNo in (select goodsNo from es_goodsLinkCategory where cateLinkFl = 'y' and cateCd = '" . $_REQUEST['category_3'] . "')";
+if ($_REQUEST['category_4'] != '')
+    $sql_where = $sql_where . $sql_con . "es_goods.goodsNo in (select goodsNo from es_goodsLinkCategory where cateLinkFl = 'y' and cateCd = '" . $_REQUEST['category_4'] . "')";
+
+if ($_REQUEST['goodsDisplayFl'] != '')
+    $sql_where = $sql_where . $sql_con . "es_goods.goodsDisplayFl = '" . $_REQUEST['goodsDisplayFl'] . "'";
+if ($_REQUEST['goodsDisplayMobileFl'] != '')
+    $sql_where = $sql_where . $sql_con . "es_goods.goodsDisplayMobileFl = '" . $_REQUEST['goodsDisplayMobileFl'] . "'";
+if ($_REQUEST['goodsSellFl'] != '')
+    $sql_where = $sql_where . $sql_con . "es_goods.goodsSellFl = '" . $_REQUEST['goodsSellFl'] . "'";
+if ($_REQUEST['goodsSellMobileFl'] != '')
+    $sql_where = $sql_where . $sql_con . "es_goods.goodsSellMobileFl = '" . $_REQUEST['goodsSellMobileFl'] . "'";
+
+if ($_REQUEST['soldOutFl'] != '') {
+    if ($_REQUEST['soldOutFl'] == 'y') {
+        $sql_where = $sql_where . $sql_con . "es_goods.totalStock = 0";
+    } else {
+        $sql_where = $sql_where . $sql_con . "es_goods.totalStock > 0";
+    }
+}
+
+if ($_REQUEST['companyManager'] != '') {
+    $sql_where = $sql_where . $sql_con . "(  es_goods.scmNo in (select companyNo from fa_companyManager where companyKind = 'P' and managerId = '" . $_REQUEST['companyManager'] . "')
+                        or es_goods.purchaseNo in (select companyNo from fa_companyManager where companyKind = 'C' and managerId = '" . $_REQUEST['companyManager'] . "')
+                        )";
+}
+
+if ($_REQUEST['purchasenocheck'] == 'y') {
+    $sql_where = $sql_where . $sql_con . " es_goods.scmNo = '1' ";
+}
+if ($_REQUEST['scmcheck'] == 'y') {
+    $sql_where = $sql_where . $sql_con . " es_goods.scmNo != '1' ";
+}
+
+if ($_REQUEST['notuse'] == 'y') {
+    $sql_where = $sql_where . $sql_con . " es_goods.totalStock - (FLOOR(((select COALESCE(sum(goodsCnt),0) from es_orderGoods where goodsNo = es_goods.goodsNo and orderStatus in ('p1','g1','g2','g3','g4','d1','d2','s1') and regDt between concat(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d'), INTERVAL -8 DAY),' 00:00:00') and concat(DATE_ADD(DATE_FORMAT(now(),'%Y-%m-%d'), INTERVAL -1 DAY),' 23:59:59') ) / 7)) * (DATEDIFF(es_goods.tuSalesEnd, CURDATE()) - 2))  > 0";
+}
+
+if ($_REQUEST['taxFreeFl'] == 't') {
+    $sql_where = $sql_where . $sql_con . " es_goods.taxFreeFl='t'";
+} elseif ($_REQUEST['taxFreeFl'] == 'n') {
+    $sql_where = $sql_where . $sql_con . " es_goods.taxFreeFl='n'";
+} elseif ($_REQUEST['taxFreeFl'] == 'f') {
+    $sql_where = $sql_where . $sql_con . " es_goods.taxFreeFl='f'";
+}
+
+
+if ($_REQUEST['sort'] == 'salesEnd asc') {
+    $sql_where = $sql_where . $sql_con . "es_goods.tuSalesEnd != '0000-00-00 00:00:00'";
+    $orderbySql = $_REQUEST['sort'];
+} elseif ($_REQUEST['sort'] == 'orderGoodsCnt desc') {
+    $orderbySql = $_REQUEST['sort'];
+} else {
+    $orderbySql = "goodsNo desc";
+}
+
+if ($_REQUEST['pagenum'] != '') {
+    $perPage = $_REQUEST['pagenum'];
+} else {
+    $perPage = 10;
+}
+$block_set = 3;
+
+$page = $_REQUEST['page'];
+if ($page == "") {
+    $page = 1;
+}
+$block = ceil($page / $block_set);
+$startPage = ($page - 1) * $perPage;
+
+$total = sqlone("SELECT count(*) as total FROM $board $sql_where", $connect);
+
+$total_page = ceil($total / $perPage);
+$total_block = ceil($total_page / $block_set);
+
+$list = sql_results("select $sql_select from $board $sql_where order by $orderbySql limit $startPage,$perPage", $connect);
+
+$sno = 1;
+$btnCount = 1;
+
+//echo $_REQUEST['page'];
+//echo $_REQUEST['pagenum'];
+
+
+
+//print_r($_REQUEST['reviewGoodsNo']);
+
+
+//연동 목록 추가
+if($_REQUEST['reviewGoodsNo'] != ''){
+    $select_goodsNo = $_REQUEST['reviewGoodsNo'];
+    $goodsNo_ = '';
+
+    foreach ($select_goodsNo as $goodsNo) {
+        $goodsNo_ = $goodsNo_.$goodsNo.',';
+    }
+    $goodsNo_ = substr($goodsNo_ , 0, -1);
+    $sql_where2 = "where es_goods.goodsNo in ($goodsNo_)";
+    //echo "select $sql_select from $board $sql_where2";
+    $list2 = sql_results("select $sql_select from $board2 $sql_where2 ", $connect);
+}
+
+
+//연동 처리
+//$selected_list = $_REQUEST['selected_list'];
+//
+//if(!empty($selected_list)){
+//    $goodsNo_list = '';
+//    $validation = 0;
+//
+//    foreach($selected_list as $item){
+//        $goodsNo_list = $goodsNo_list.$item;
+//    }
+//    $goodsNo_list = substr($goodsNo_list , 0, -1);
+//    //$validation = sql_results('select exists(select goodsNo from dk where goodsNo in('.$goodsNo.')) as exist;', $connect);
+//    
+//    //디비에 삽입
+//    $min = min($selected_list);
+//    foreach($selected_list as $item){
+//        sql_results("insert into dk values($min,$item)");
+//    }
+//}
+
+
+
+function get_connect_check($val){
+    $temp = sqlone("select goodsNo from fa_review_connect where goodsNo = '$val'");
+    if($temp != ''){
+        $value = 'O';
+    }else{
+        $value = 'X';
+    }
+    return $value;
+}
+
+function get_review_cnt($val){
+    $review_cnt = sqlone("SELECT COUNT(*) FROM es_plusReviewArticle WHERE goodsNo = '$val';");
+    return $review_cnt;
+}
+
+?>
+
+
+
+
+
+<?php include INC_DIR . "/start.php"; ?>
+<?php include INC_DIR . "/_head.php"; ?>
+<?php include INC_DIR . "/login_check.php"; ?>
+
+<script>
+    function chageLangSelect() {
+        var langSelect = document.getElementById("search_type");
+        var selectValue = langSelect.options[langSelect.selectedIndex].value;
+        jQuery(':input[name=search_type]').val(selectValue);
+    }
+    
+
+    jQuery(document).ready(function () {
+        jQuery("#chkAll").click(function () {
+            if (this.checked) {
+                $(':checkbox').each(function () {
+                    this.checked = true;
+                    jQuery('input[name="ScmCheck"]').prop("checked", false);
+                    jQuery('input[name="PurchaseNoCheck"]').prop("checked", false);
+                    jQuery('input[name="NotUse"]').prop("checked", false);
+
+                    jQuery('tbody tr').addClass('table-active');
+                });
+            } else {
+                $(':checkbox').each(function () {
+                    jQuery('tbody tr').removeClass('table-active');
+                    this.checked = false;
+                });
+            }
+        });
+
+        jQuery('#category1').change(function () {
+            jQuery('#category2, #category3, #category4').find('option').each(function () {
+                jQuery(this).remove();
+                jQuery(':input[name=category_1]').val('');
+                jQuery(':input[name=category_2]').val('');
+                jQuery(':input[name=category_3]').val('');
+                jQuery(':input[name=category_4]').val('');
+            });
+            jQuery('#category2, #category3, #category4').append("<option value=''>= 카테고리 검색 =</option>");
+            var cateCd = jQuery(this).val();
+            var level = "2";
+            jQuery.ajax({
+                'url': '<?= LIB_URL ?>/sc_ajax.php',
+                'type': 'POST',
+                'data': {'mode': 'category', 'level': level, 'cateCd': cateCd},
+                'success': function (data) {
+                    jQuery('#category2').append(data);
+                }
+            });
+            jQuery(':input[name=category_1]').val(jQuery('#category1 option:selected').val());
+        });
+
+        jQuery('#category2').change(function () {
+            jQuery('#category3, #category4').find('option').each(function () {
+                jQuery(this).remove();
+            });
+            jQuery('#category3, #category4').append("<option value=''>= 카테고리 검색 =</option>");
+            var cateCd = jQuery(this).val();
+            var level = "3";
+            jQuery.ajax({
+                'url': '<?= LIB_URL ?>/sc_ajax.php',
+                'type': 'POST',
+                'data': {'mode': 'category', 'level': level, 'cateCd': cateCd},
+                'success': function (data) {
+                    jQuery('#category3').append(data);
+                }
+            });
+            jQuery(':input[name=category_2]').val(jQuery('#category2 option:selected').val())
+        });
+
+        jQuery('#category3').change(function () {
+            jQuery('#category4').find('option').each(function () {
+                jQuery(this).remove();
+            });
+            jQuery('#category4').append("<option value=''>= 카테고리 검색 =</option>");
+            var cateCd = jQuery(this).val();
+            var level = "4";
+            jQuery.ajax({
+                'url': '<?= LIB_URL ?>/sc_ajax.php',
+                'type': 'POST',
+                'data': {'mode': 'category', 'level': level, 'cateCd': cateCd},
+                'success': function (data) {
+                    jQuery('#category4').append(data);
+                }
+            });
+            jQuery(':input[name=category_3]').val(jQuery('#category3 option:selected').val())
+        });
+
+        jQuery('#category4').change(function () {
+            jQuery(':input[name=category_4]').val(jQuery('#category4 option:selected').val())
+        });
+
+        jQuery('.review_goodsNo_btn').click(function () {
+            var review_goodsNo = jQuery(this).data("goodsno");
+            if (review_goodsNo != '') {
+                var url = $(location).attr('href');
+                if(url.indexOf('?') == -1){
+                    location.href = url + '?reviewGoodsNo[]=' + review_goodsNo;
+                }else{
+                    location.href = url + '&reviewGoodsNo[]=' + review_goodsNo;
+                }
+            } else {
+                alert('상품을 선택');
+            }
+        });
+        
+        
+    });
+    
+    
+    
+    
+    
+    //목록에 있는 체크박스 선택 시 배열에 저장
+    function value_check() {
+        var check_count = document.getElementsByName("goodsno[]").length;
+        var selected_goodsNo = [];
+        
+        for (var i=0; i<check_count; i++) {
+            if (document.getElementsByName("goodsno[]")[i].checked == true) {
+                selected_goodsNo.push(document.getElementsByName("goodsno[]")[i].value);
+            }
+        }
+        return selected_goodsNo;
+    }
+    
+    
+    
+    //연동
+    function combine() {
+        var selected_item = new Object();
+        selected_item = value_check();
+        selected_item = JSON.stringify(selected_item);
+        
+        jQuery.ajax({
+            type: "POST",
+            data: {sc_mode: 'combine_review', selected_list: selected_item,
+                    'redirect': '<?= $_SERVER['REQUEST_URI'] ?>'},
+            cache: false,
+            success: function(returndata){
+                console.log(returndata);
+                if(returndata == 'success'){
+                    alert("연동 성공");
+                }else if(returndata == 'fail'){
+                    alert("연동 실패(연동된 상품이 존재합니다. 연동해제를 먼저하세요.)")
+                }else if(returndata == 'lengthError'){
+                    alert("2개 이상 상품을 선택하세요.")
+                }
+                else{
+                    alert("상품을 선택하세요.")
+                }      
+                window.location.reload();
+            }
+        });
+    }
+    
+    //해제
+    function release() {
+        var selected_item = new Object();
+        selected_item = value_check();
+        selected_item = JSON.stringify(selected_item);
+        
+         jQuery.ajax({
+            type: "POST",
+            data: {sc_mode: 'release_review', selected_list: selected_item,
+                    'redirect': '<?= $_SERVER['REQUEST_URI'] ?>'},
+            cache: false,
+            success: function(returndata){
+                console.log(returndata);
+                if(returndata.indexOf('success') != -1){
+                    alert(returndata.substring(7, returndata.length) + "과 연동된 상품 연동 해제");
+                    alert("연동 해제 성공")
+                }else if(returndata == 'fail'){
+                    alert("연동 해제 실패(연동되어진 상품이 아닙니다.)");
+                }
+                else{
+                    alert("상품을 선택하세요")
+                }      
+                window.location.reload();
+            }
+        });
+    }
+    
+    
+//    function show_connected_list(){
+//        var selected_item = new Object();
+//        selected_item = value_check();
+//        selected_item = JSON.stringify(selected_item);
+//        
+//        jQuery.ajax({
+//            type: "POST",
+//            data: {sc_mode: 'show_list', selected_list: selected_item,
+//                    'redirect': '<?= $_SERVER['REQUEST_URI'] ?>'},
+//            cache: false,
+//            success: function(returndata){
+//                console.log(returndata);
+//                if(returndata.indexOf('success') != -1){
+//                    alert(returndata.substring(7, returndata.length) + "과 연동된 상품 연동 해제");
+//                }else if(returndata == 'fail'){
+//                    alert("연동 해제 실패(연동되어진 상품이 아닙니다.)");
+//                }
+//                else{
+//                    alert("상품을 선택하세요")
+//                }      
+//                window.location.reload();
+//            }
+//        });        
+//        
+//    }
+
+    
+</script>
+
+
+
+
+<form name='pagemove'>
+    <input type='hidden' name='page' />
+    <input type='hidden' name='pagenum' value="<?= $_REQUEST['pagenum'] ?>" />
+    <input type='hidden' name='sch' value="<?= $_REQUEST['sch'] ?>" />
+    <input type='hidden' name='sch_type' value="<?= $_REQUEST['sch_type'] ?>" />
+    <input type='hidden' name='category_1' value="<?= $_REQUEST['category_1'] ?>" />
+    <input type='hidden' name='category_2' value="<?= $_REQUEST['category_2'] ?>" />
+    <input type='hidden' name='category_3' value="<?= $_REQUEST['category_3'] ?>" />
+    <input type='hidden' name='category_4' value="<?= $_REQUEST['category_4'] ?>" />
+    <input type="hidden" name="goodsDisplayFl" value="<?= $_REQUEST['goodsDisplayFl'] ?>">
+    <input type="hidden" name="goodsDisplayMobileFl" value="<?= $_REQUEST['goodsDisplayMobileFl'] ?>">
+    <input type="hidden" name="goodsSellFl" value="<?= $_REQUEST['goodsSellFl'] ?>">
+    <input type="hidden" name="goodsSellMobileFl" value="<?= $_REQUEST['goodsSellMobileFl'] ?>">
+    <input type="hidden" name="soldOutFl" value="<?= $_REQUEST['soldOutFl'] ?>">
+    <input type="hidden" name="companyManager" value="<?= $_REQUEST['companyManager'] ?>">
+    <input type="hidden" name="scmcheck" value="<?= $_REQUEST['scmcheck'] ?>">
+    <input type="hidden" name="purchasenocheck" value="<?= $_REQUEST['purchasenocheck'] ?>">
+    <input type="hidden" name="notuse" value="<?= $_REQUEST['notuse'] ?>">
+    <input type="hidden" name="taxFreeFl" value="<?= $_REQUEST['taxFreeFl'] ?>">
+</form>
+
+
+
+
+
+<section id="main-content">
+    <section class="wrapper" >
+        <h3><i class="fa fa-angle-right"></i> 상품 후기 연동</h3>
+<!--        <input type="submit" class="btn btn-theme" onclick="combine();" style="position: absolute; right: 8%; top: 9.5%;" value="연동">
+        <input type="submit" class="btn btn-theme" onclick="release();" style="position: absolute; right: 3%; top: 9.5%;" value="연동해제">-->
+        <div class="row mt" style="float:left; width:100%;">
+            <?php
+            while ($sno <= $btnCount) {
+                if ($sno <= $btnCount) {
+                    include '../jhkim/select_Option_Html.php';
+                    $sno = $sno + 1;
+                } else {
+                    break;
+                }
+            }
+            ?> 
+        </div>
+    </section>
+</section>
+
+<?php include INC_DIR . "/footer.php"; ?>
+<?php include INC_DIR . "/end.php"; ?>
